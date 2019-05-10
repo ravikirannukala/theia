@@ -25,9 +25,11 @@
     "electron-store": "^2.0.0",
     "fix-path": "^2.1.0",
     "native-keymap": "^1.2.5",
+    "node-addon-api": "^1.6.3",
+    "node-gyp": "^4.0.0",
     "unzipper": "^0.9.11"
   },
   "scripts": {
-    "postinstall": "node ./scripts/skip-replace-ffmpeg || (node ./electron-replace-ffmpeg)"
+    "postinstall": "node ./scripts/skip-replace-ffmpeg || (node ./electron-replace-ffmpeg )"
   }
 }
