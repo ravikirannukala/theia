@@ -9,6 +9,8 @@
 Breaking changes:
 
 - [preferences] refactored to integrate launch configurations as preferences
+- [scm] added Source Control Model
+- [git] bind Git UI to SCM  
 
 ## v0.6.0
 
