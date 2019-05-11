@@ -342,6 +342,9 @@ export function createAPIFactory(
                         console.error('Progress location \'SourceControl\' is not supported.');
                     });
                 }
+            },
+            registerUriHandler(handler: theia.UriHandler): theia.Disposable {
+                return new Disposable(() => {});
             }
         };
 
