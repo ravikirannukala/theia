@@ -30,7 +30,6 @@ import { FileSystemWatcher } from './filesystem-watcher';
 import { FileSystemFrontendContribution } from './filesystem-frontend-contribution';
 import { FileSystemProxyFactory } from './filesystem-proxy-factory';
 import { FileUploadService } from './file-upload-service';
-import { fileUploadPath, FileUploadServer } from '../common/file-upload-server';
 
 export default new ContainerModule(bind => {
     bindFileSystemPreferences(bind);
@@ -63,11 +62,6 @@ export default new ContainerModule(bind => {
     bind(FileSystemFrontendContribution).toSelf().inSingletonScope();
     bind(CommandContribution).toService(FileSystemFrontendContribution);
     bind(FrontendApplicationContribution).toService(FileSystemFrontendContribution);
-
-    bind(FileUploadServer).toDynamicValue(ctx => {
-        const provider = ctx.container.get(WebSocketConnectionProvider);
-        return provider.createProxy<FileUploadServer>(fileUploadPath);
-    }).inSingletonScope();
 });
 
 export function bindFileResource(bind: interfaces.Bind): void {

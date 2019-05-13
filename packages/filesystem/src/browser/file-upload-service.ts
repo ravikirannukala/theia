@@ -16,14 +16,13 @@
 
 // tslint:disable:no-any
 
-import * as base64 from 'base64-js';
 import { injectable, inject, postConstruct } from 'inversify';
 import URI from '@theia/core/lib/common/uri';
-import { CancellationTokenSource, CancellationToken, checkCancelled } from '@theia/core/lib/common/cancellation';
+import { CancellationTokenSource, CancellationToken, checkCancelled, cancelled } from '@theia/core/lib/common/cancellation';
 import { Deferred } from '@theia/core/lib/common/promise-util';
 import { MessageService } from '@theia/core/lib/common/message-service';
-import { Progress } from '@theia/core/src/common/message-service-protocol';
-import { FileUploadServer } from '../common/file-upload-server';
+import { Progress } from '@theia/core/lib/common/message-service-protocol';
+import { Endpoint } from '@theia/core/lib/browser/endpoint';
 
 const maxChunkSize = 64 * 1024;
 
@@ -47,9 +46,6 @@ export class FileUploadService {
 
     @inject(MessageService)
     protected readonly messageService: MessageService;
-
-    @inject(FileUploadServer)
-    protected readonly uploadServer: FileUploadServer;
 
     protected uploadForm: FileUploadService.Form;
 
@@ -117,68 +113,68 @@ export class FileUploadService {
             return result;
         }
         const total = totalSize;
-        let done = 0;
-        for (const entry of entries) {
-            progress.report({ work: { done, total } });
-            const { file } = entry;
-            let id: string | undefined;
-            let readBytes = 0;
-            let someAppendFailed: Error | undefined;
-            try {
-                const promises: Promise<void>[] = [];
-                do {
-                    const fileSlice = await this.readFileSlice(file, readBytes);
-                    if (someAppendFailed) {
-                        throw someAppendFailed;
-                    }
-                    checkCancelled(token);
-                    readBytes = fileSlice.read;
-                    if (id === undefined) {
-                        id = await this.uploadServer.open(entry.uri.toString(), fileSlice.content, readBytes >= file.size);
-                        checkCancelled(token);
-                        progress.report({
-                            work: {
-                                done: done + fileSlice.read,
-                                total
-                            }
-                        });
-                    } else {
-                        promises.push(this.uploadServer.append(id, fileSlice.content, readBytes >= file.size).then(() => {
-                            checkCancelled(token);
-                            progress.report({
-                                work: {
-                                    done: done + fileSlice.read,
-                                    total
-                                }
-                            });
-                        }, appendError => {
-                            someAppendFailed = appendError;
-                            throw appendError;
-                        }));
-                    }
-                } while (readBytes < file.size);
-                await Promise.all(promises);
-                done += file.size;
+        const deferredUpload = new Deferred<FileUploadResult>();
+        const endpoint = new Endpoint({ path: '/file-upload' });
+        const socket = new WebSocket(endpoint.getWebSocketUrl().toString());
+        socket.onerror = deferredUpload.reject;
+        socket.onclose = ({ code, reason }) => deferredUpload.reject(new Error(String(reason || code)));
+        socket.onmessage = ({ data }) => {
+            const response = JSON.parse(data);
+            if (response.done) {
+                const { done } = response;
                 progress.report({ work: { done, total } });
-            } finally {
-                if (id !== undefined) {
-                    this.uploadServer.close(id);
+                return;
+            }
+            if (response.ok) {
+                deferredUpload.resolve(result);
+            } else if (response.error) {
+                deferredUpload.reject(new Error(response.error));
+            } else {
+                console.error('unknown upload response: ' + response);
+            }
+            socket.close();
+        };
+        socket.onopen = async () => {
+            try {
+                socket.send(JSON.stringify({ total }));
+                for (const entry of entries) {
+                    const { file } = entry;
+                    let readBytes = 0;
+                    socket.send(JSON.stringify({ uri: entry.uri.toString(), size: file.size }));
+                    if (file.size) {
+                        do {
+                            const fileSlice = await this.readFileSlice(file, readBytes);
+                            checkCancelled(token);
+                            readBytes = fileSlice.read;
+                            socket.send(fileSlice.content);
+                            while (socket.bufferedAmount > maxChunkSize * 2) {
+                                await new Promise(resolve => setTimeout(resolve));
+                                checkCancelled(token);
+                            }
+                        } while (readBytes < file.size);
+                    }
+                }
+            } catch (e) {
+                deferredUpload.reject(e);
+                if (socket.readyState === 1) {
+                    socket.close();
                 }
             }
-        }
-        progress.report({ work: { done: total, total } });
-        return result;
+        };
+        token.onCancellationRequested(() => {
+            deferredUpload.reject(cancelled());
+            if (socket.readyState === 1) {
+                socket.close();
+            }
+        });
+        return deferredUpload.promise;
     }
 
     protected readFileSlice(file: File, read: number): Promise<{
-        content: string
+        content: ArrayBuffer
         read: number
     }> {
         return new Promise((resolve, reject) => {
-            if (file.size === 0 && read === 0) {
-                resolve({ content: '', read });
-                return;
-            }
             const bytesLeft = file.size - read;
             if (!bytesLeft) {
                 reject(new Error('nothing to read'));
@@ -189,8 +185,7 @@ export class FileUploadService {
             const reader = new FileReader();
             reader.onload = () => {
                 read += size;
-                const buffer = reader.result as ArrayBuffer;
-                const content = base64.fromByteArray(new Uint8Array(buffer));
+                const content = reader.result as ArrayBuffer;
                 resolve({ content, read });
             };
             reader.onerror = reject;
@@ -321,22 +316,10 @@ export namespace FileUploadService {
         token: CancellationToken
         entries: UploadEntry[]
         totalSize: number
-
     }
     export interface Form {
         targetInput: HTMLInputElement
         fileInput: HTMLInputElement
         progress?: FileUploadProgressParams
-    }
-    export interface SubmitOptions {
-        body: FormData
-        token: CancellationToken
-        onDidProgress: (event: ProgressEvent) => void
-    }
-    export interface SubmitError extends Error {
-        status: number;
-    }
-    export function isSubmitError(e: any): e is SubmitError {
-        return !!e && 'status' in e;
     }
 }

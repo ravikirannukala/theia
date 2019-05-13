@@ -21,8 +21,8 @@ import { FileSystem, FileSystemClient, fileSystemPath, DispatchingFileSystemClie
 import { FileSystemWatcherServer, FileSystemWatcherClient, fileSystemWatcherPath } from '../common/filesystem-watcher-protocol';
 import { FileSystemWatcherServerClient } from './filesystem-watcher-client';
 import { NsfwFileSystemWatcherServer } from './nsfw-watcher/nsfw-filesystem-watcher';
-import { fileUploadPath, FileUploadServer } from '../common/file-upload-server';
-import { NodeFileUploadServer } from './node-file-upload-server';
+import { MessagingService } from '@theia/core/lib/node/messaging/messaging-service';
+import { NodeFileUploadService } from './node-file-upload-service';
 
 const SINGLE_THREADED = process.argv.indexOf('--no-cluster') !== -1;
 
@@ -82,13 +82,6 @@ export default new ContainerModule(bind => {
         })
     ).inSingletonScope();
 
-    bind(NodeFileUploadServer).toSelf().inTransientScope();
-    bind(FileUploadServer).toService(NodeFileUploadServer);
-    bind(ConnectionHandler).toDynamicValue(ctx =>
-        new JsonRpcConnectionHandler(fileUploadPath, client => {
-            const server = ctx.container.get<FileUploadServer>(FileUploadServer);
-            client.onDidCloseConnection(() => server.dispose());
-            return server;
-        })
-    ).inSingletonScope();
+    bind(NodeFileUploadService).toSelf().inSingletonScope();
+    bind(MessagingService.Contribution).toService(NodeFileUploadService);
 });
