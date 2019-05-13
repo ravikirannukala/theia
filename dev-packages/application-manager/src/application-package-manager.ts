@@ -78,20 +78,18 @@ export class ApplicationPackageManager {
     }
 
     async startElectron(args: string[]): Promise<void> {
-        const { mainArgs, options } = this.adjustArgs([this.pck.frontend('electron-main.js'), ...args]);
         const electronCli = require.resolve('electron/cli.js', { paths: [this.pck.projectPath] });
-        this.__process.fork(electronCli, mainArgs, options);
+        this.process.spawn(electronCli, [this.pck.frontend('electron-main.js'), ...args],
+            { stdio: [0, 1, 2] });
     }
 
     async startBrowser(args: string[]): Promise<void> {
-        const { mainArgs, options } = this.adjustArgs(args);
-        this.__process.fork(this.pck.backend('main.js'), mainArgs, options);
-    }
-
-    private adjustArgs(args: string[], forkOptions: cp.ForkOptions = {}): Readonly<{ mainArgs: string[]; options: cp.ForkOptions }> {
-        const options = {
-            ...this.forkOptions,
-            forkOptions
+        const options: cp.ForkOptions = {
+            stdio: [0, 1, 2, 'ipc'],
+            env: {
+                ...process.env,
+                THEIA_PARENT_PID: String(process.pid)
+            }
         };
         const mainArgs = [...args];
         const inspectIndex = mainArgs.findIndex(v => v.startsWith('--inspect'));
@@ -99,20 +97,7 @@ export class ApplicationPackageManager {
             const inspectArg = mainArgs.splice(inspectIndex, 1)[0];
             options.execArgv = ['--nolazy', inspectArg];
         }
-        return {
-            mainArgs,
-            options
-        };
-    }
-
-    private get forkOptions(): cp.ForkOptions {
-        return {
-            stdio: [0, 1, 2, 'ipc'],
-            env: {
-                ...process.env,
-                THEIA_PARENT_PID: String(process.pid)
-            }
-        };
+        this.__process.fork(this.pck.backend('main.js'), mainArgs, options);
     }
 
 }

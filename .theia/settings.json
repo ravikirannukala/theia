@@ -10,6 +10,5 @@
   "[jsonc]": {
     "editor.tabSize": 2
   },
-"typescript.tsdk": "node_modules/typescript/lib",
-"editor.autoSave": "on"
+  "typescript.tsdk": "node_modules/typescript/lib"
 }
