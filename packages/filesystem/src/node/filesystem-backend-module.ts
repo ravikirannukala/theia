@@ -21,6 +21,8 @@ import { FileSystem, FileSystemClient, fileSystemPath, DispatchingFileSystemClie
 import { FileSystemWatcherServer, FileSystemWatcherClient, fileSystemWatcherPath } from '../common/filesystem-watcher-protocol';
 import { FileSystemWatcherServerClient } from './filesystem-watcher-client';
 import { NsfwFileSystemWatcherServer } from './nsfw-watcher/nsfw-filesystem-watcher';
+import { fileUploadPath, FileUploadServer } from '../common/file-upload-server';
+import { NodeFileUploadServer } from './node-file-upload-server';
 
 const SINGLE_THREADED = process.argv.indexOf('--no-cluster') !== -1;
 
@@ -75,6 +77,16 @@ export default new ContainerModule(bind => {
         new JsonRpcConnectionHandler<FileSystemWatcherClient>(fileSystemWatcherPath, client => {
             const server = ctx.container.get<FileSystemWatcherServer>(FileSystemWatcherServer);
             server.setClient(client);
+            client.onDidCloseConnection(() => server.dispose());
+            return server;
+        })
+    ).inSingletonScope();
+
+    bind(NodeFileUploadServer).toSelf().inTransientScope();
+    bind(FileUploadServer).toService(NodeFileUploadServer);
+    bind(ConnectionHandler).toDynamicValue(ctx =>
+        new JsonRpcConnectionHandler(fileUploadPath, client => {
+            const server = ctx.container.get<FileUploadServer>(FileUploadServer);
             client.onDidCloseConnection(() => server.dispose());
             return server;
         })
